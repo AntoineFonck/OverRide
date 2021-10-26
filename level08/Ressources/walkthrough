@@ -1,0 +1,41 @@
+In this program, buffers are protected by correct input size limitations, and the stack is protected with a canary.
+
+There is a format string vulnerability in the program, through the unsafe use of snprintf ==> snprintf(log_msg[strlen(log_msg)], 254 - strlen(log_msg), filename);
+As filename is user controlled and interpreted as a format string, modifiers like %p will be evaluated by the function.
+
+Here, we see the confirmation that the vulnerability exists (0xdeadbeef offset was found after some tries) :
+level08@OverRide:~$ ./level08 $(python -c 'print "\xef\xbe\xad\xde" + "%10$p"')
+ERROR: Failed to open ﾭ10$p
+level08@OverRide:~$ cat backups/.log 
+LOG: Starting back up: ﾭxdeadbeef203a --> %p was interpreted and gave the value we put by ourselves on the stack
+
+However, there's a limit of how many bytes will be written, which is gonna make it virtually impossible, to write a specific address where the return address is...
+
+Let's continue our research and get through the logic of the program :
+
+It's a backup system.
+You give an argument to the program, which will be the file you want to back up.
+This file has to be in the current directory.
+
+The program will copy, byte by byte, your argument file into the folder "./backups/".
+
+The newly created file, in the backup folder, will have been created with the rights of level09, and at least have read rights for all other users (group 'users')
+
+There's therefore a big logic flaw and vulnerability here : what if we gave as input a file that level09 can read, but not us (level08) ? (/home/users/level09/.pass ? >:))
+
+Well sadly, we would have to copy the pass file into our current folder, but we can't as we don't have the rights.
+
+However, nothing forbids us from creating a symbolic link to /home/users/level09/.pass in our current folder !
+And as fopen() follows symbolic links, we will be able to read this precious file and get a copy of it that we can read in the "./backups" folder !
+
+First, we need to give ourselves write access to our folder to create a symbolic link in it :
+chmod 770 .
+
+Then, we create the symbolic link to the pass file of level09 :
+ln -s /home/users/level09/.pass level09pass
+
+Finally, we create the 'backup' file of level09 pass file through the program, and then read it :
+./level08 level09pass; cat ./backups/level09pass
+
+cd; chmod 770 .; ln -s /home/users/level09/.pass level09pass; ./level08 level09pass; cat ./backups/level09pass
+fjAwpJNs2vvkFLRebEvAQ2hFZ4uQBWfHRsP62d8S

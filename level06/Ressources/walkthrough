@@ -1,0 +1,36 @@
+The program expects a login string, and a serial number.
+
+There doesn't seem to be any memory corruption possible. (Stack canary activated, fgets(), strnlen() are used instead of their unsafe counterparts...)
+
+If the function auth(login, serial) returns 0, we get a shell.
+
+auth() is a complicated function.
+
+Here are the conditions our login string has to respect :
+
+	- at least 6 bytes
+	- only printable characters (no bytes under 0x20)
+
+Complex manipulations are done on our login string (xor/additions/modulos in a loop) to create a specific number.
+
+If this created number is equal to our input serial number, auth() returns 0 !
+
+Now, the trick is very easy. We are going to send a random input login string that meets the requirements ("helloworld").
+When we find out which number/key gets created, we'll be able to reuse it by relaunching the program, as this value will always be the same if we give the same string as input (deterministic calculation, no randomness)
+
+Then, we bypass the simple anti-debug protection by skipping the ptrace() instructions. Finally, we discover which number/key was given through the input "helloworld".
+
+We find out this number is 0x5f2b29 (6236969).
+
+So now, we launch the program again, give "helloworld" as login string, and 6236969 as serial number, and we get our shell :)
+
+level06@OverRide:~$ (python -c 'print "helloworld\n6236969"'; cat) | ./level06 
+***********************************
+*		level06		  *
+***********************************
+-> Enter Login: ***********************************
+***** NEW ACCOUNT DETECTED ********
+***********************************
+-> Enter Serial: Authenticated!
+cat /home/users/level07/.pass
+GbcPDRgsFK77LNnnuh7QyFYA2942Gp8yKj9KrWD8

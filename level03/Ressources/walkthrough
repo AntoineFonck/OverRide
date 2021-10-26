@@ -1,0 +1,25 @@
+The program expects a password. This password doesn't seem hardcoded.
+
+After reversing the test() and decrypt() functions, we realize some basic deciphering is happening with our input.
+Our input gets used as a XOR key against a hardcoded unreadable string.
+
+If this unreadable string, XORed with our input key, gives "Congratulations", we get a shell !
+
+The first byte is 0x51 == 'Q', and we need this to be 'C', so we just calculate with which XOR key would the byte 'Q' (0x51) give 'C' (0x43) 
+Our input key must not be higher than 21, otherwise it doesn't get used as a XOR key.
+
+XOR goes both ways : A ^ B == C && A ^ C == B --> 'Q' ^ '?' == 'C' && 'Q' ^ 'C' == '?'
+so if we do 'Q' ^ 'C', we get the key !! --> 12
+
+
+Now, the last problem is that our input is not directly used as a XOR key.
+Rather, the XOR key is our input substracted to the hardcoded value 0x1337d00d (322424845)
+
+So, to get 12 as a XOR key, we need to feed 0x1337d00d - 12 (322424827) to our program
+
+
+
+(echo 322424827; cat) | ./level03
+
+cat /home/users/level04/.pass
+kgv3tkEb9h2mLkRsPkXRfc2mHbjMxQzvb2FrgKkf

