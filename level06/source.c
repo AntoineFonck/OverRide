@@ -12,7 +12,7 @@ int auth(char *login, int serial)
 	{
 		puts ("\e[32m.---------------------------.");
 		puts ("\e[31m| !! TAMPERING DETECTED !!  |");
-		puts ("\e[32m'---------------------------');
+		puts ("\e[32m'---------------------------'");
 		return 1;
 	}
 	key = ((int32_t)login[3] ^ 0x1337) + 0x5eeded;

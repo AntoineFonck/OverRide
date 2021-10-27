@@ -20,7 +20,16 @@ When we find out which number/key gets created, we'll be able to reuse it by rel
 
 Then, we bypass the simple anti-debug protection by skipping the ptrace() instructions. Finally, we discover which number/key was given through the input "helloworld".
 
-We find out this number is 0x5f2b29 (6236969).
+We find out this number is 0x5f2b29 (6236969). We find out the number by checking the value of the key during comparison with our input.
+
+(gdb) x/2i 0x8048863 //comparison (serial == key ?)
+   0x8048863 <auth+283>:        mov    eax,DWORD PTR [ebp+0xc]
+=> 0x8048866 <auth+286>:        cmp    eax,DWORD PTR [ebp-0x10]
+(gdb) x/dw $ebp-0x10 //value of 'key'
+0xffffd678:     6236969
+(gdb) x/xw $ebp-0x10
+0xffffd678:     0x005f2b29
+
 
 So now, we launch the program again, give "helloworld" as login string, and 6236969 as serial number, and we get our shell :)
 
